@@ -50,21 +50,37 @@ def test_env():
         env.render(render_obs_grids=True)
         print('\n\n')
 
-def demo_PGAgent(version=''):
+def demo_PGAgent(version='', num_resets=1):
     agent = pickle.load(open('PGAgent{}.p'.format(version), 'rb'))
     env = MARLNavEnv()
-    env.render()
-    step_counter = 0
-    done = False
-    obs_grids = env.reset()
-    while not done:
-        print('-------------------STEP_{}---------------------'.format(step_counter))
-        actions = agent.choose_action(obs_grids)
-        obs_grids, _, done, _ = env.step(actions)
-        env.render()
-        step_counter += 1
-        print('\n\n')
+    for i in range(num_resets):
+        print('---------------------------------------------------')
+        print('-------------------MAP_RESET_{}---------------------'.format(i))
+        print('---------------------------------------------------')
+        step_counter = 0
+        done = False
+        score = 0
+        collision_counter = 0
+        if i == 0:
+            obs_grids = env.reset()
+        else:
+            obs_grids = env.reset(randomize=True)
+        while not done:
+            print('-------------------STEP_{}---------------------'.format(step_counter))
+            actions = agent.choose_action(obs_grids)
+            obs_grids, reward, done, info = env.step(actions)
+            score += reward
+            if any(info['in_collision']):
+                collision_counter += 1
+            env.render()
+            step_counter += 1
+            print('\n\n')
+        print('---------------------------------------------------')
+        print('score:{}'.format(score))
+        print('num_collisions:{}'.format(collision_counter))
+        print('goals_reached:{}'.format([True if goal_loc[0] is None else False for goal_loc in env.goal_locations]))
+        print('---------------------------------------------------')
 
 if __name__ == '__main__':
-    demo_PGAgent(version=467)
+    demo_PGAgent(num_resets=5)
     # test_env()

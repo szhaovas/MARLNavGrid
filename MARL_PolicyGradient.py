@@ -17,9 +17,11 @@ train a policy network for each bot using shared reward
 class PGAgent:
     '''
     alpha:        optimizer learning rate for network
+    beta:         weight of entropy loss when calculating loss
     gamma:        reward discount
     '''
-    def __init__(self, alpha=0.001, gamma=0.99, n_bots=2, n_actions=5):
+    def __init__(self, alpha=0.001, beta=0.1, gamma=0.99, n_bots=2, n_actions=5):
+        self.beta = beta
         self.gamma = gamma
         self.n_bots = n_bots
         self.n_actions = n_actions
@@ -77,9 +79,10 @@ class PGAgent:
                 for step_index, (g, obs_states) in enumerate(zipped_rewards_obs):
                     state = tf.convert_to_tensor([obs_states[bot_index]], dtype=tf.float32)
                     probs = self.policy(state)
+                    entropy_loss = -tf.reduce_sum(tf.math.multiply(probs, tf.math.log(probs)))
                     action_probs = tfp.distributions.Categorical(probs=probs)
                     log_prob = action_probs.log_prob(actions[step_index][bot_index])
-                    loss += -g * tf.squeeze(log_prob)
+                    loss += -(1-self.beta)*g*tf.squeeze(log_prob) - self.beta*entropy_loss
                 gradient = tape.gradient(loss, self.policy.trainable_variables)
                 self.policy.optimizer.apply_gradients(zip(gradient, self.policy.trainable_variables))
 
@@ -99,7 +102,7 @@ if __name__ == '__main__':
         try:
             done = False
             score = 0
-            obs_states = env.reset()
+            obs_states = env.reset(randomize=True)
             while not done:
                 actions = agent.choose_action(obs_states)
                 new_obs_states, reward, done, info = env.step(actions)
