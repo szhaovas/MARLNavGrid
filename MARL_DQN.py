@@ -1,7 +1,6 @@
 import pickle
 import copy
 import tensorflow as tf
-import tensorflow.keras as keras
 from MARL_networks import CriticNetwork
 import tensorflow_probability as tfp
 from tensorflow.keras.optimizers import Adam
@@ -15,8 +14,8 @@ from itertools import product
 '''
 implements Deep Q-learning algorithm
 
-train a global DQN that takes in the entire grid PLUS a full action assignment for ALL bots
-    and returns estimated utility value
+train a global DQN that takes in the entire grid and estimates utility values
+    for all possible full action assignments
 '''
 class DQNAgent:
     '''
@@ -34,47 +33,54 @@ class DQNAgent:
         self.n_actions = n_actions
         self.action_space = self._get_action_space()
         self.batch_size = batch_size
-        self.memory = ReplayBuffer(mem_size, grid_size, n_bots)
-        self.q_eval = CriticNetwork()
-        self.q_eval.compile(optimizer=Adam(learning_rate=alpha))
+        self.memory = ReplayBuffer(mem_size, grid_size)
+        self.q_eval = CriticNetwork(n_actions=n_actions**n_bots)
+        self.q_eval.compile(optimizer=Adam(learning_rate=alpha), loss='mean_squared_error')
+
+    @classmethod
+    def from_pickle(cls, version=''):
+        try:
+            return pickle.load(open('DQNAgent{}.p'.format(version), 'rb'))
+        except FileNotFoundError:
+            print('Cannot find DQNAgent version, exiting...')
+            quit()
+        except _ as err:
+            print(err)
+            quit()
 
     '''
-    iterates over each possible full action assignment in action_space, estimates its utility
-        and chooses argmax
-
-    if training is True, disable random action
+    chooses a random action assignment if epsilon check passes
+        otherwise chooses the action assignment that has the highest estimated utility value
+        also returns action space index to be stored in replay buffer
     '''
-    def choose_actions(self, flat_grid, training=False):
-        if not training and np.random.random() < self.epsilon:
+    def choose_actions(self, flat_grid):
+        if np.random.random() < self.epsilon:
             index = np.random.choice(self.n_actions**self.n_bots)
-            actions = self.action_space[index]
-            max_eval = None
         else:
-            max_eval = float('-inf')
-            max_index = 0
-            for index, assignment in enumerate(self.action_space):
-                eval = self.q_eval([flat_grid], [assignment.astype(np.float32)])
-                if eval > max_eval:
-                    max_eval = eval
-                    max_index = index
+            # tensor_grid = tf.convert_to_tensor([flat_grid], dtype=tf.float32)
+            evals = self.q_eval(flat_grid.reshape(1,-1))
+            index = np.argmax(evals)
 
-            actions = self.action_space[index]
+        actions = self.action_space[index]
 
-        return actions, max_eval
+        return actions, index
 
     '''
-    action space:
-        - 0: action 0 for bot 0, action 0 for bot 1
-        - 1: action 0 for bot 0, action 1 for bot 1
-        - 2: action 0 for bot 0, action 2 for bot 1
-        - 3: action 0 for bot 0, action 3 for bot 1
-        - 4: action 0 for bot 0, action 4 for bot 1
-        - 5: action 1 for bot 0, action 0 for bot 1
-        - 6: action 1 for bot 0, action 1 for bot 1
-        - 7: action 1 for bot 0, action 2 for bot 1
-        - 8: action 1 for bot 0, action 3 for bot 1
-        - 9: action 1 for bot 0, action 4 for bot 1
-        - 10: action 2 for bot 0, action 0 for bot 1
+    output of DQN is of dimension n_actions ** n_bots
+        each output node represents a possible assignment of actions to all bots
+
+        The mapping of node to action assignments goes as follows:
+        - node 0: action 0 for bot 0, action 0 for bot 1
+        - node 1: action 0 for bot 0, action 1 for bot 1
+        - node 2: action 0 for bot 0, action 2 for bot 1
+        - node 3: action 0 for bot 0, action 3 for bot 1
+        - node 4: action 0 for bot 0, action 4 for bot 1
+        - node 5: action 1 for bot 0, action 0 for bot 1
+        - node 6: action 1 for bot 0, action 1 for bot 1
+        - node 7: action 1 for bot 0, action 2 for bot 1
+        - node 8: action 1 for bot 0, action 3 for bot 1
+        - node 9: action 1 for bot 0, action 4 for bot 1
+        - node 10: action 2 for bot 0, action 0 for bot 1
         - etc...
         - i.e. it's just the cartesian product of [0...(n_actions-1)] with itself repeated n_bots times
     '''
@@ -88,27 +94,33 @@ class DQNAgent:
         states, actions, rewards, states_, dones = \
                 self.memory.sample_buffer(self.batch_size)
 
-        with tf.GradientTape() as tape:
-            q_nexts = tf.squeeze(self.q_eval(states, actions.astype(np.float32)))
-            q_targets = np.zeros(self.batch_size, dtype=np.float32)
-            for batch_index, s_ in enumerate(states_):
-                _, max_eval = self.choose_actions(s_, training=True)
-                q_ = rewards[batch_index] + self.gamma * max_eval * dones[batch_index]
-                q_targets[batch_index] = q_
+        evals = self.q_eval(states)
+        evals_ = self.q_eval(states_)
 
-            q_targets = tf.convert_to_tensor(q_targets, dtype=tf.float32)
-            loss = keras.losses.MSE(q_nexts, q_targets)
+        target_evals = np.copy(evals)
 
-            gradient = tape.gradient(loss, self.q_eval.trainable_variables)
-            self.q_eval.optimizer.apply_gradients(zip(
-                gradient, self.q_eval.trainable_variables))
+        batch_index = np.arange(self.batch_size, dtype=np.int32)
+        target_evals[batch_index, actions] = rewards + self.gamma * np.max(evals_, axis=1)*dones
+
+        self.q_eval.train_on_batch(states, target_evals)
 
         self.epsilon = self.epsilon - self.eps_dec if self.epsilon > \
                 self.eps_min else self.eps_min
 
 if __name__ == '__main__':
     env = MARLNavEnv(map_filename='minimap.txt', max_steps=10)
-    agent = DQNAgent(n_bots=env.nbots, n_actions=5, grid_size=env.nrows*env.ncols, batch_size=1)
+    resume_previous = input('Resume from a previously trained agent?({blank}/{version_num}/n):')
+    if resume_previous == '':
+        agent = DQNAgent.from_pickle()
+    elif resume_previous == 'n':
+        agent = DQNAgent(n_bots=env.nbots, n_actions=5, grid_size=env.nrows*env.ncols)
+    else:
+        try:
+            version_num = int(resume_previous)
+            agent = DQNAgent.from_pickle(version=version_num)
+        except ValueError:
+            print('Unknown input, exiting...')
+            quit()
 
     score_history = []
     num_episodes = 1000
@@ -119,10 +131,10 @@ if __name__ == '__main__':
             env.reset()
             flat_grid = env.filled_grid().astype(np.float32).ravel()
             while not done:
-                actions, _ = agent.choose_actions(flat_grid)
+                actions, index = agent.choose_actions(flat_grid)
                 _, reward, done, _ = env.step(actions)
                 flat_grid_ = env.filled_grid().astype(np.float32).ravel()
-                agent.memory.store_transition(flat_grid, actions, reward, flat_grid_, done)
+                agent.memory.store_transition(flat_grid, index, reward, flat_grid_, done)
                 flat_grid = flat_grid_
                 score += reward
                 agent.learn()
