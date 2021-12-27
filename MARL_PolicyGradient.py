@@ -7,10 +7,9 @@ import numpy as np
 from MARL_env import MARLNavEnv
 from MARL_utils import plotLearning
 
-n_bots = 2
 
 '''
-implements REINFORCE algorithm
+implements REINFORCE algorithm with entropy loss term
 
 train a policy network for each bot using shared reward
 '''
@@ -20,7 +19,7 @@ class PGAgent:
     beta:         weight of entropy loss when calculating loss
     gamma:        reward discount
     '''
-    def __init__(self, alpha=0.001, beta=0.1, gamma=0.99, n_bots=2, n_actions=5):
+    def __init__(self, n_bots, n_goals, n_actions, alpha=0.001, beta=0.05, gamma=0.99):
         self.beta = beta
         self.gamma = gamma
         self.n_bots = n_bots
@@ -29,8 +28,19 @@ class PGAgent:
         self.action_memory = []
         self.reward_memory = []
         # since all robots are homogenous we can train a single network for all of them
-        self.policy = ActorNetwork(n_actions=n_actions)
+        self.policy = ActorNetwork(n_goals=n_goals, n_actions=n_actions)
         self.policy.compile(optimizer=Adam(learning_rate=alpha))
+
+    @classmethod
+    def from_pickle(cls, version=''):
+        try:
+            return pickle.load(open('PGAgent{}.p'.format(version), 'rb'))
+        except FileNotFoundError:
+            print('Cannot find PGAgent version, exiting...')
+            quit()
+        except _ as err:
+            print(err)
+            quit()
 
     '''
     each bot can only observe its observation grid
@@ -42,8 +52,8 @@ class PGAgent:
         actions = []
         for o in obs_states:
             # Keras Dense layer expects 2D input
-            state = tf.convert_to_tensor([o], dtype=tf.float32)
-            probs = self.policy(state)
+            # state = tf.convert_to_tensor([o], dtype=tf.float32)
+            probs = self.policy(o.reshape(1,-1))
             action_probs = tfp.distributions.Categorical(probs=probs)
             action = action_probs.sample()[0]
             if action == 5:
@@ -77,8 +87,8 @@ class PGAgent:
             with tf.GradientTape() as tape:
                 loss = 0
                 for step_index, (g, obs_states) in enumerate(zipped_rewards_obs):
-                    state = tf.convert_to_tensor([obs_states[bot_index]], dtype=tf.float32)
-                    probs = self.policy(state)
+                    # state = tf.convert_to_tensor([obs_states[bot_index]], dtype=tf.float32)
+                    probs = self.policy(obs_states[bot_index].reshape(1,-1))
                     entropy_loss = -tf.reduce_sum(tf.math.multiply(probs, tf.math.log(probs)))
                     action_probs = tfp.distributions.Categorical(probs=probs)
                     log_prob = action_probs.log_prob(actions[step_index][bot_index])
@@ -91,13 +101,22 @@ class PGAgent:
         self.reward_memory = []
 
 if __name__ == '__main__':
-    agent = PGAgent(n_bots = n_bots)
+    env = MARLNavEnv()
+    resume_previous = input('Resume from a previously trained agent?({blank}/{version_num}/n):')
+    if resume_previous == '':
+        agent = PGAgent.from_pickle()
+    elif resume_previous == 'n':
+        agent = PGAgent(n_bots=env.nbots, n_goals=env.ngoals, n_actions=5)
+    else:
+        try:
+            version_num = int(resume_previous)
+            agent = PGAgent.from_pickle(version=version_num)
+        except ValueError:
+            print('Unknown input, exiting...')
+            quit()
 
-    env = MARLNavEnv(obs_range=1)
     score_history = []
-
     num_episodes = 1000
-
     for i in range(num_episodes):
         try:
             done = False
@@ -119,7 +138,14 @@ if __name__ == '__main__':
             filename = 'marl_nav{}.png'.format(i)
             plotLearning(score_history, filename=filename, window=100)
             pickle.dump(agent, open('PGAgent{}.p'.format(i), 'wb'))
-            quit()
+            resume = input('PGAgent saved! Continue training?(y/n):')
+            if resume == 'y':
+                continue
+            elif resume == 'n':
+                quit()
+            else:
+                print('Unknown input, resuming...')
+                continue
 
     filename = 'marl_nav.png'
     plotLearning(score_history, filename=filename, window=100)

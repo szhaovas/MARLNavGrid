@@ -28,7 +28,7 @@ individual_action_texts = [
 
 
 class MARLNavEnv:
-    def __init__(self, map_filename="map1.txt", obs_range=1, max_steps=100):
+    def __init__(self, map_filename='map1.txt', obs_range=1, max_steps=100):
         with open(map_filename, 'r') as f:
             self.obs_range = obs_range
             self.max_steps = max_steps
@@ -227,20 +227,28 @@ class MARLNavEnv:
 
         return obs_states
 
+
     '''
+    add bots and goals to grid; the filled grid is used for DQN and visualization
+
     0 -> empty
     1 -> bot
     2 -> obstacle
     3 -> goal
     '''
-    def render(self, render_obs_grids=False):
-        rendered_grid = copy.deepcopy(self.grid)
+    def filled_grid(self):
+        result = copy.deepcopy(self.grid)
         for loc in self.bot_locations:
-            rendered_grid[loc] = 1
+            result[loc] = 1
         for (goal_r, goal_c) in self.goal_locations:
             if goal_r is None:
                 continue
-            rendered_grid[goal_r, goal_c] = 3
+            result[goal_r, goal_c] = 3
+        return result
+
+
+    def render(self, render_obs_grids=False):
+        rendered_grid = self.filled_grid()
         print('------------------------------------------')
         print(rendered_grid)
         print('------------------------------------------')
