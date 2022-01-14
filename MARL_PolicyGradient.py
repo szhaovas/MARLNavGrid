@@ -9,7 +9,7 @@ from MARL_utils import plotLearning
 
 
 '''
-implements REINFORCE algorithm with entropy loss term
+implements REINFORCE algorithm with entropy loss term and modular network
 
 train a policy network for each bot using shared reward
 '''
@@ -46,7 +46,7 @@ class PGAgent:
     each bot can only observe its observation grid
         consisted of its surroundings upto obs_range and goals
     '''
-    def choose_action(self, obs_states):
+    def choose_actions(self, obs_states):
         assert len(obs_states) == self.n_bots
 
         actions = []
@@ -123,7 +123,7 @@ if __name__ == '__main__':
             score = 0
             obs_states = env.reset(randomize=True)
             while not done:
-                actions = agent.choose_action(obs_states)
+                actions = agent.choose_actions(obs_states)
                 new_obs_states, reward, done, info = env.step(actions)
                 agent.store_transition(obs_states, actions, reward)
                 obs_states = new_obs_states

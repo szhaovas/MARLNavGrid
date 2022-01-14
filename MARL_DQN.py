@@ -7,7 +7,8 @@ from tensorflow.keras.optimizers import Adam
 import numpy as np
 from MARL_env import MARLNavEnv
 from MARL_utils import plotLearning
-from replay_buffer import ReplayBuffer
+# from replay_buffer import ReplayBuffer
+from priority_buffer import Memory
 from itertools import product
 
 
@@ -16,6 +17,7 @@ implements Deep Q-learning algorithm
 
 train a global DQN that takes in the entire grid and estimates utility values
     for all possible full action assignments
+    - prioritized experience replay
 '''
 class DQNAgent:
     '''
@@ -33,7 +35,8 @@ class DQNAgent:
         self.n_actions = n_actions
         self.action_space = self._get_action_space()
         self.batch_size = batch_size
-        self.memory = ReplayBuffer(mem_size, grid_size)
+        # self.memory = ReplayBuffer(mem_size, grid_size)
+        self.memory = Memory(mem_size, grid_size)
         self.q_eval = CriticNetwork(n_actions=n_actions**n_bots)
         self.q_eval.compile(optimizer=Adam(learning_rate=alpha), loss='mean_squared_error')
 
@@ -88,10 +91,12 @@ class DQNAgent:
         return np.array(list(product([i for i in range(self.n_actions)], repeat=self.n_bots)))
 
     def learn(self):
-        if self.memory.mem_cntr < self.batch_size:
+        # if self.memory.mem_cntr < self.batch_size:
+        #     return
+        if self.memory.tree.data_counter < self.batch_size:
             return
 
-        states, actions, rewards, states_, dones = \
+        states, actions, rewards, states_, dones, tree_idx, ISWeights = \
                 self.memory.sample_buffer(self.batch_size)
 
         evals = self.q_eval(states)
@@ -102,7 +107,11 @@ class DQNAgent:
         batch_index = np.arange(self.batch_size, dtype=np.int32)
         target_evals[batch_index, actions] = rewards + self.gamma * np.max(evals_, axis=1)*dones
 
-        self.q_eval.train_on_batch(states, target_evals)
+        self.q_eval.train_on_batch(states, target_evals, ISWeights)
+
+        # only 1 non-zero TD error for each sample
+        abs_errors = np.max(abs(target_evals - evals), axis=1)
+        self.memory.batch_update(tree_idx, abs_errors)
 
         self.epsilon = self.epsilon - self.eps_dec if self.epsilon > \
                 self.eps_min else self.eps_min

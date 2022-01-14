@@ -43,6 +43,7 @@ class MARLNavEnv:
             self.ngoals = int(f.readline()[:-1])
             self._start_goal_locations = [tuple(map(int, f.readline()[:-1].split())) for i in range(self.ngoals)]
             self.goal_locations = copy.deepcopy(self._start_goal_locations)
+            self.time_goal_reached = [None for i in range(self.ngoals)]
 
             '''
             grid only shows obstacles when training
@@ -168,6 +169,8 @@ class MARLNavEnv:
             for bot_loc in new_locations:
                 if goal_loc == bot_loc:
                     self.goal_locations[goal_index] = (None, None)
+                    if self.time_goal_reached[goal_index] is None:
+                        self.time_goal_reached[goal_index] = self.step_counter
             if self.goal_locations[goal_index] == (None, None):
                 goals_reached[goal_index] = True
 
@@ -177,10 +180,10 @@ class MARLNavEnv:
         # rewards
         done = False
         if self.step_counter >= self.max_steps:
-            reward = np.sum([g*50*(1-0.9*(self.step_counter/self.max_steps)) for g in goals_reached])
+            reward = np.sum([0 if not g else 50*(1-0.9*(self.time_goal_reached[i]/self.max_steps)) for i, g in enumerate(goals_reached)])
             done = True
         elif all(goals_reached):
-            reward = 200 * (1 - 0.9 * (self.step_counter / self.max_steps))
+            reward = np.sum([0 if not g else 50*(1-0.9*(self.time_goal_reached[i]/self.max_steps)) for i, g in enumerate(goals_reached)]) * 2
             done = True
         elif any(in_collision):
             reward = -1
@@ -222,6 +225,8 @@ class MARLNavEnv:
         else:
             self.bot_locations = copy.deepcopy(self._start_bot_locations)
             self.goal_locations = copy.deepcopy(self._start_goal_locations)
+
+        self.time_goal_reached = [None for i in range(self.ngoals)]
 
         obs_states = self.get_obs_states()
 

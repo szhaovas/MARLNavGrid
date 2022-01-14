@@ -1,6 +1,9 @@
+import os
 import pickle
+import numpy as np
 from MARL_env import MARLNavEnv, individual_action_texts
 from MARL_PolicyGradient import PGAgent
+from MARL_DQN import DQNAgent
 
 def test_env():
     env = MARLNavEnv()
@@ -67,20 +70,50 @@ def demo_PGAgent(version='', num_resets=1):
             obs_grids = env.reset(randomize=True)
         while not done:
             print('-------------------STEP_{}---------------------'.format(step_counter))
-            actions = agent.choose_action(obs_grids)
+            env.render()
+            actions = agent.choose_actions(obs_grids)
             obs_grids, reward, done, info = env.step(actions)
             score += reward
             if any(info['in_collision']):
                 collision_counter += 1
-            env.render()
             step_counter += 1
             print('\n\n')
+        print('-------------------STEP_{}---------------------'.format(step_counter))
+        env.render()
         print('---------------------------------------------------')
         print('score:{}'.format(score))
         print('num_collisions:{}'.format(collision_counter))
         print('goals_reached:{}'.format([True if goal_loc[0] is None else False for goal_loc in env.goal_locations]))
         print('---------------------------------------------------')
 
+def demo_DQNAgent(version=''):
+    agent = pickle.load(open('DQNAgent{}.p'.format(version), 'rb'))
+    env = MARLNavEnv(map_filename='minimap.txt', max_steps=10)
+    step_counter = 0
+    done = False
+    score = 0
+    collision_counter = 0
+    obs_grids = env.reset()
+    while not done:
+        print('-------------------STEP_{}---------------------'.format(step_counter))
+        env.render()
+        flat_grid = env.filled_grid().astype(np.float32).ravel()
+        actions, _ = agent.choose_actions(flat_grid)
+        obs_grids, reward, done, info = env.step(actions)
+        score += reward
+        if any(info['in_collision']):
+            collision_counter += 1
+        step_counter += 1
+        print('\n\n')
+    print('-------------------STEP_{}---------------------'.format(step_counter))
+    env.render()
+    print('---------------------------------------------------')
+    print('score:{}'.format(score))
+    print('num_collisions:{}'.format(collision_counter))
+    print('goals_reached:{}'.format([True if goal_loc[0] is None else False for goal_loc in env.goal_locations]))
+    print('---------------------------------------------------')
+
 if __name__ == '__main__':
-    demo_PGAgent(num_resets=5)
+    # demo_PGAgent(num_resets=5)
+    demo_DQNAgent(version=365)
     # test_env()
