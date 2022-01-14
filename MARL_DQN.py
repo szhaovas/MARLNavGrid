@@ -14,19 +14,21 @@ from itertools import product
 
 '''
 implements Deep Q-learning algorithm
+    - prioritized experience replay
+    - target network from double DQN to deal with unstable training and overestimation
 
 train a global DQN that takes in the entire grid and estimates utility values
     for all possible full action assignments
-    - prioritized experience replay
 '''
 class DQNAgent:
     '''
     alpha:        optimizer learning rate for network
     gamma:        reward discount
     epsilon:      exploration rate
+    update_freq:  sync target network every <update_freq> iterations
     '''
     def __init__(self, n_bots, n_actions, grid_size, alpha=0.003, gamma=0.99, epsilon=1.0,
-                    mem_size=1000000, batch_size=64):
+                    update_freq=10, mem_size=1000000, batch_size=64):
         self.gamma = gamma
         self.epsilon = epsilon
         self.eps_dec = 1e-3
@@ -34,11 +36,14 @@ class DQNAgent:
         self.n_bots = n_bots
         self.n_actions = n_actions
         self.action_space = self._get_action_space()
+        self.update_freq = update_freq
         self.batch_size = batch_size
         # self.memory = ReplayBuffer(mem_size, grid_size)
         self.memory = Memory(mem_size, grid_size)
         self.q_eval = CriticNetwork(n_actions=n_actions**n_bots)
         self.q_eval.compile(optimizer=Adam(learning_rate=alpha), loss='mean_squared_error')
+        self.target_q_eval = CriticNetwork(n_actions=n_actions**n_bots)
+        self.target_q_eval.compile(optimizer=Adam(learning_rate=alpha), loss='mean_squared_error')
 
     @classmethod
     def from_pickle(cls, version=''):
@@ -90,6 +95,9 @@ class DQNAgent:
     def _get_action_space(self):
         return np.array(list(product([i for i in range(self.n_actions)], repeat=self.n_bots)))
 
+    def sync_target_network(self):
+        self.target_q_eval.set_weights(self.q_eval.get_weights())
+
     def learn(self):
         # if self.memory.mem_cntr < self.batch_size:
         #     return
@@ -99,22 +107,27 @@ class DQNAgent:
         states, actions, rewards, states_, dones, tree_idx, ISWeights = \
                 self.memory.sample_buffer(self.batch_size)
 
-        evals = self.q_eval(states)
-        evals_ = self.q_eval(states_)
+        q_evals = self.q_eval(states)
+        q_evals_ = self.q_eval(states_)
+        best_action_indices = np.argmax(q_evals_, axis=1)
+        target_q_evals_ = self.target_q_eval(states_).numpy()
 
-        target_evals = np.copy(evals)
+        target_evals = np.copy(q_evals)
 
         batch_index = np.arange(self.batch_size, dtype=np.int32)
-        target_evals[batch_index, actions] = rewards + self.gamma * np.max(evals_, axis=1)*dones
+        target_evals[batch_index, actions] = rewards + self.gamma * \
+                target_q_evals_[batch_index, best_action_indices]*dones
 
         self.q_eval.train_on_batch(states, target_evals, ISWeights)
 
         # only 1 non-zero TD error for each sample
-        abs_errors = np.max(abs(target_evals - evals), axis=1)
+        abs_errors = np.max(abs(target_evals - q_evals), axis=1)
         self.memory.batch_update(tree_idx, abs_errors)
 
         self.epsilon = self.epsilon - self.eps_dec if self.epsilon > \
                 self.eps_min else self.eps_min
+        if self.memory.tree.data_counter % self.update_freq == 0:
+            self.sync_target_network()
 
 if __name__ == '__main__':
     env = MARLNavEnv(map_filename='minimap.txt', max_steps=10)
