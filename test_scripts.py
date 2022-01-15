@@ -88,7 +88,8 @@ def demo_PGAgent(version='', num_resets=1):
 
 def demo_DQNAgent(version=''):
     agent = pickle.load(open('DQNAgent{}.p'.format(version), 'rb'))
-    env = MARLNavEnv(map_filename='minimap.txt', max_steps=10)
+    # env = MARLNavEnv(map_filename='minimap.txt', max_steps=10)
+    env = MARLNavEnv()
     step_counter = 0
     done = False
     score = 0
@@ -104,7 +105,8 @@ def demo_DQNAgent(version=''):
         if any(info['in_collision']):
             collision_counter += 1
         step_counter += 1
-        print('\n\n')
+        os.system('clear')
+        # print('\n\n')
     print('-------------------STEP_{}---------------------'.format(step_counter))
     env.render()
     print('---------------------------------------------------')
@@ -115,5 +117,5 @@ def demo_DQNAgent(version=''):
 
 if __name__ == '__main__':
     # demo_PGAgent(num_resets=5)
-    demo_DQNAgent(version=365)
+    demo_DQNAgent(version=65)
     # test_env()

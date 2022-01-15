@@ -9,8 +9,11 @@
   - outputs from the two sub-networks are concatenated and passed through a final softmax layer to get the policy
 
 ## DQN solution
-- doesn't scale well beyond 3-by-3 grid...
-  - prioritized experience replay?
-  - reduce input dimension?
+![DQN demo](DQN_demo.gif)
+- prioritized experience replay with importance samping and sum tree
+- target network from double DQN
+- demo agent trained on map1 ONLY with fixed bot and goal positions
+  - state space becomes too difficult after allowing random bot and goal positions
+    - need better state design?
 
 ## local PG + global DQN

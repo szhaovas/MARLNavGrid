@@ -28,7 +28,7 @@ class DQNAgent:
     update_freq:  sync target network every <update_freq> iterations
     '''
     def __init__(self, n_bots, n_actions, grid_size, alpha=0.003, gamma=0.99, epsilon=1.0,
-                    update_freq=10, mem_size=1000000, batch_size=64):
+                    update_freq=20, mem_size=1000000, batch_size=64):
         self.gamma = gamma
         self.epsilon = epsilon
         self.eps_dec = 1e-3
@@ -130,7 +130,8 @@ class DQNAgent:
             self.sync_target_network()
 
 if __name__ == '__main__':
-    env = MARLNavEnv(map_filename='minimap.txt', max_steps=10)
+    # env = MARLNavEnv(map_filename='minimap.txt', max_steps=10)
+    env = MARLNavEnv()
     resume_previous = input('Resume from a previously trained agent?({blank}/{version_num}/n):')
     if resume_previous == '':
         agent = DQNAgent.from_pickle()
